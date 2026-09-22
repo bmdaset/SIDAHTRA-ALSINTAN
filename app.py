@@ -58,24 +58,6 @@ def generate_qr_code(data_id, kelompok, jenis, kecamatan):
     img.save(qr_path)
     return qr_path
 
-# --- FUNGSI ILUSTRASI GAMBAR BARANG ---
-def get_gambar_alsintan(jenis_barang):
-    jenis = str(jenis_barang).lower()
-    if "traktor r4" in jenis or "roda 4" in jenis or "r4" in jenis:
-        return "https://images.unsplash.com/photo-1595974482597-4f6c4f2c224e?q=80&w=300&auto=format&fit=crop"
-    elif "traktor" in jenis or "hand traktor" in jenis or "cultivator" in jenis or "rotari" in jenis:
-        return "https://images.unsplash.com/photo-1586771107445-d3ca888129ff?q=80&w=300&auto=format&fit=crop"
-    elif "pompa" in jenis or "air" in jenis:
-        return "https://images.unsplash.com/photo-1563514227147-6d2ff665a6a0?q=80&w=300&auto=format&fit=crop"
-    elif "combine" in jenis or "panen" in jenis or "harvester" in jenis:
-        return "https://images.unsplash.com/photo-1500937386664-56d1dfef3854?q=80&w=300&auto=format&fit=crop"
-    elif "sprayer" in jenis or "siram" in jenis or "semprot" in jenis:
-        return "https://images.unsplash.com/photo-1530595467537-0b5996c41f2d?q=80&w=300&auto=format&fit=crop"
-    elif "rice" in jenis or "milling" in jenis or "penggiling" in jenis:
-        return "https://images.unsplash.com/photo-1574943320219-553eb213f72d?q=80&w=300&auto=format&fit=crop"
-    else:
-        return "https://images.unsplash.com/photo-1592982537447-7440770cbfc9?q=80&w=300&auto=format&fit=crop"
-
 # --- AMBIL DATA DARI SUPABASE ---
 def fetch_data_supabase():
     if supabase is None:
@@ -107,7 +89,7 @@ menu = st.tabs(["📊 Dashboard", "📥 Input Baru", "📋 Rekap & Galeri", "�
 # ==================== TAB 0: DASHBOARD ====================
 with menu[0]:
     st.subheader("Ringkasan Data SIDAHTRA")
-    st.markdown("<p style='color: #4A6B52;'>Statistik cepat data hibah alsintan beserta ilustrasi otomatis per jenis barang.</p>", unsafe_allow_html=True)
+    st.markdown("<p style='color: #4A6B52;'>Statistik cepat data hibah alsintan terpadu.</p>", unsafe_allow_html=True)
     st.markdown("---")
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Total Data", total_data)
@@ -123,13 +105,18 @@ with menu[1]:
         with col_1:
             id_bantuan = st.text_input("ID / Nomor Registrasi Bantuan", placeholder="Contoh: AID-2026-001")
             nama_kelompok = st.text_input("Nama Kelompok Tani / P3A / UPJA")
+            nama_ketua = st.text_input("Nama Ketua Kelompok")
+            nik_ketua = st.text_input("NIK Ketua Kelompok", placeholder="16 digit NIK")
+            no_hp = st.text_input("Nomor HP / WhatsApp")
             jenis_alsintan = st.text_input("Jenis Alsintan", placeholder="Contoh: Traktor Roda 4 / Pompa Air")
-            jumlah = st.number_input("Jumlah Unit", min_value=1, value=1)
         with col_2:
+            jumlah = st.number_input("Jumlah Unit", min_value=1, value=1)
             harga_satuan = st.number_input("Harga Satuan (Rp)", min_value=0, value=0, step=100000)
             asal_usul = st.selectbox("Asal Usul / Sumber Anggaran", ["APBN", "APBD Prov", "APBD Kab", "Hibah Lainnya"])
             kecamatan = st.text_input("Kecamatan")
             tahun = st.selectbox("Tahun Anggaran", [2026, 2025, 2024, 2023, 2022])
+            link_proposal = st.text_input("Link Proposal (Google Drive)", placeholder="https://drive.google.com/...")
+            link_bast = st.text_input("Link BAST (Google Drive)", placeholder="https://drive.google.com/...")
         
         submitted = st.form_submit_button("Simpan Data ke Supabase & Buat QR")
         if submitted:
@@ -143,12 +130,17 @@ with menu[1]:
                     data_to_insert = {
                         "id_bantuan": id_bantuan,
                         "nama_kelompok": nama_kelompok,
+                        "nama_ketua": nama_ketua,
+                        "nik_ketua": nik_ketua,
+                        "no_hp": no_hp,
                         "jenis_alsintan": jenis_alsintan,
                         "jumlah": int(jumlah),
                         "harga_satuan": float(harga_satuan),
                         "asal_usul": asal_usul,
                         "kecamatan": kecamatan,
                         "tahun": int(tahun),
+                        "link_proposal": link_proposal,
+                        "link_bast": link_bast,
                         "qr_path": qr_path
                     }
                     supabase.table("hibah").insert(data_to_insert).execute()
@@ -174,7 +166,15 @@ with menu[3]:
         selected_id = st.selectbox("Pilih ID Bantuan untuk Cetak QR", df_global["id_bantuan"].tolist())
         row_data = df_global[df_global["id_bantuan"] == selected_id].iloc[0]
         st.write(f"**Kelompok:** {row_data.get('nama_kelompok')}")
+        st.write(f"**Ketua:** {row_data.get('nama_ketua', '-')}")
         st.write(f"**Jenis:** {row_data.get('jenis_alsintan')}")
+        
+        # Tombol akses link dokumen Google Drive jika ada
+        if row_data.get('link_proposal'):
+            st.markdown(f"📄 [Buka Proposal di Google Drive]({row_data.get('link_proposal')})")
+        if row_data.get('link_bast'):
+            st.markdown(f"📋 [Buka Berita Acara (BAST) di Google Drive]({row_data.get('link_bast')})")
+            
         qr_file = row_data.get('qr_path')
         if qr_file and os.path.exists(qr_file):
             st.image(qr_file, width=200, caption=f"QR Code: {selected_id}")
@@ -191,11 +191,18 @@ with menu[4]:
         target_row = df_global[df_global["id_bantuan"] == edit_id].iloc[0]
         with st.form("form_edit"):
             new_kelompok = st.text_input("Nama Kelompok", value=str(target_row.get("nama_kelompok", "")))
-            new_jumlah = st.number_input("Jumlah", min_value=1, value=int(target_row.get("jumlah", 1)))
+            new_ketua = st.text_input("Nama Ketua", value=str(target_row.get("nama_ketua", "")))
+            new_proposal = st.text_input("Link Proposal", value=str(target_row.get("link_proposal", "")))
+            new_bast = st.text_input("Link BAST", value=str(target_row.get("link_bast", "")))
             update_btn = st.form_submit_button("Perbarui Data")
             if update_btn:
                 try:
-                    supabase.table("hibah").update({"nama_kelompok": new_kelompok, "jumlah": new_jumlah}).eq("id_bantuan", edit_id).execute()
+                    supabase.table("hibah").update({
+                        "nama_kelompok": new_kelompok,
+                        "nama_ketua": new_ketua,
+                        "link_proposal": new_proposal,
+                        "link_bast": new_bast
+                    }).eq("id_bantuan", edit_id).execute()
                     st.success("Data berhasil diperbarui!")
                 except Exception as ex:
                     st.error(f"Gagal memperbarui: {ex}")
