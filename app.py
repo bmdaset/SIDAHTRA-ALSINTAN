@@ -6,7 +6,7 @@ import io
 import qrcode
 from supabase import create_client, Client
 
-# --- KREDENSIAL SUPABASE YANG SUDAH DISMATKAN ---
+# --- KREDENSIAL SUPABASE (Sila pastikan SUPABASE_KEY disalin lengkap dari Dashboard Supabase Anda) ---
 SUPABASE_URL = "https://kfbsbhsztfruhdqjydqs.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtmYnNiaHN6dGZydWhkcWp5ZHFzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk2NTM0NzIsImV4cCI6MjEwNTIyOTQ3Mn0.jEvSj_2gKTEmhRyR1IzjXCNPXOMIqafs_M4tq82QNUE"
 
