@@ -43,8 +43,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- FUNGSI GENERATE QR CODE ---
-def generate_qr_code(data_id, kelompok, jenis, kecamatan):
-    qr_data = f"SIDAHTRA ASSET\nID: {data_id}\nKelompok: {kelompok}\nBarang: {jenis}\nKecamatan: {kecamatan}"
+def generate_qr_code(identifier, kelompok, jenis, kecamatan):
+    qr_data = f"SIDAHTRA ASSET\nIdentitas/No: {identifier}\nKelompok: {kelompok}\nBarang: {jenis}\nKecamatan: {kecamatan}"
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
@@ -54,7 +54,8 @@ def generate_qr_code(data_id, kelompok, jenis, kecamatan):
     qr.add_data(qr_data)
     qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white")
-    qr_path = os.path.join(UPLOAD_DIR, "qrcode", f"qr_asset_{data_id}.png")
+    safe_name = str(identifier).replace("/", "_")
+    qr_path = os.path.join(UPLOAD_DIR, "qrcode", f"qr_asset_{safe_name}.png")
     img.save(qr_path)
     return qr_path
 
@@ -103,12 +104,13 @@ with menu[1]:
     with st.form("form_input_alsintan"):
         col_1, col_2 = st.columns(2)
         with col_1:
-            id_bantuan = st.text_input("ID / Nomor Registrasi Bantuan", placeholder="Contoh: AID-2026-001")
             nama_kelompok = st.text_input("Nama Kelompok Tani / P3A / UPJA")
             nama_ketua = st.text_input("Nama Ketua Kelompok")
             nik_ketua = st.text_input("NIK Ketua Kelompok", placeholder="16 digit NIK")
             no_hp = st.text_input("Nomor HP / WhatsApp")
             jenis_alsintan = st.text_input("Jenis Alsintan", placeholder="Contoh: Traktor Roda 4 / Pompa Air")
+            no_rangka = st.text_input("Nomor Rangka", placeholder="Masukkan Nomor Rangka")
+            no_mesin = st.text_input("Nomor Mesin", placeholder="Masukkan Nomor Mesin")
         with col_2:
             jumlah = st.number_input("Jumlah Unit", min_value=1, value=1)
             harga_satuan = st.number_input("Harga Satuan (Rp)", min_value=0, value=0, step=100000)
@@ -120,20 +122,24 @@ with menu[1]:
         
         submitted = st.form_submit_button("Simpan Data ke Supabase & Buat QR")
         if submitted:
-            if not id_bantuan or not nama_kelompok or not jenis_alsintan:
-                st.warning("Mohon lengkapi ID, Nama Kelompok, dan Jenis Alsintan!")
+            if not nama_kelompok or not jenis_alsintan:
+                st.warning("Mohon lengkapi Nama Kelompok dan Jenis Alsintan!")
             elif supabase is None:
                 st.error("Koneksi Supabase belum terinisialisasi.")
             else:
                 try:
-                    qr_path = generate_qr_code(id_bantuan, nama_kelompok, jenis_alsintan, kecamatan)
+                    # Menggunakan no_rangka atau nama kelompok sebagai acuan QR jika id_bantuan tidak ada
+                    qr_identifier = no_rangka if no_rangka else nama_kelompok
+                    qr_path = generate_qr_code(qr_identifier, nama_kelompok, jenis_alsintan, kecamatan)
+                    
                     data_to_insert = {
-                        "id_bantuan": id_bantuan,
                         "nama_kelompok": nama_kelompok,
                         "nama_ketua": nama_ketua,
                         "nik_ketua": nik_ketua,
                         "no_hp": no_hp,
                         "jenis_alsintan": jenis_alsintan,
+                        "no_rangka": no_rangka,
+                        "no_mesin": no_mesin,
                         "jumlah": int(jumlah),
                         "harga_satuan": float(harga_satuan),
                         "asal_usul": asal_usul,
@@ -163,13 +169,17 @@ with menu[3]:
     if df_global.empty:
         st.info("Data belum tersedia untuk dicetak.")
     else:
-        selected_id = st.selectbox("Pilih ID Bantuan untuk Cetak QR", df_global["id_bantuan"].tolist())
-        row_data = df_global[df_global["id_bantuan"] == selected_id].iloc[0]
+        # Menggunakan kolom no_rangka atau indeks baris sebagai pilihan cetak
+        display_col = "no_rangka" if "no_rangka" in df_global.columns and df_global["no_rangka"].notna().any() else df_global.columns[0]
+        selected_item = st.selectbox("Pilih Berdasarkan No. Rangka / Data", df_global[display_col].tolist())
+        row_data = df_global[df_global[display_col] == selected_item].iloc[0]
+        
         st.write(f"**Kelompok:** {row_data.get('nama_kelompok')}")
         st.write(f"**Ketua:** {row_data.get('nama_ketua', '-')}")
         st.write(f"**Jenis:** {row_data.get('jenis_alsintan')}")
+        st.write(f"**No. Rangka:** {row_data.get('no_rangka', '-')}")
+        st.write(f"**No. Mesin:** {row_data.get('no_mesin', '-')}")
         
-        # Tombol akses link dokumen Google Drive jika ada
         if row_data.get('link_proposal'):
             st.markdown(f"📄 [Buka Proposal di Google Drive]({row_data.get('link_proposal')})")
         if row_data.get('link_bast'):
@@ -177,7 +187,7 @@ with menu[3]:
             
         qr_file = row_data.get('qr_path')
         if qr_file and os.path.exists(qr_file):
-            st.image(qr_file, width=200, caption=f"QR Code: {selected_id}")
+            st.image(qr_file, width=200, caption=f"QR Code: {selected_item}")
         else:
             st.warning("File QR Code belum tergenerate untuk data ini.")
 
@@ -187,8 +197,9 @@ with menu[4]:
     if df_global.empty:
         st.info("Tidak ada data untuk diedit.")
     else:
-        edit_id = st.selectbox("Pilih ID Bantuan yang ingin diedit", df_global["id_bantuan"].tolist(), key="edit_select")
-        target_row = df_global[df_global["id_bantuan"] == edit_id].iloc[0]
+        display_col = "no_rangka" if "no_rangka" in df_global.columns and df_global["no_rangka"].notna().any() else df_global.columns[0]
+        edit_val = st.selectbox("Pilih Data yang ingin diedit", df_global[display_col].tolist(), key="edit_select")
+        target_row = df_global[df_global[display_col] == edit_val].iloc[0]
         with st.form("form_edit"):
             new_kelompok = st.text_input("Nama Kelompok", value=str(target_row.get("nama_kelompok", "")))
             new_ketua = st.text_input("Nama Ketua", value=str(target_row.get("nama_ketua", "")))
@@ -202,7 +213,7 @@ with menu[4]:
                         "nama_ketua": new_ketua,
                         "link_proposal": new_proposal,
                         "link_bast": new_bast
-                    }).eq("id_bantuan", edit_id).execute()
+                    }).eq(display_col, edit_val).execute()
                     st.success("Data berhasil diperbarui!")
                 except Exception as ex:
                     st.error(f"Gagal memperbarui: {ex}")
@@ -213,10 +224,11 @@ with menu[5]:
     if df_global.empty:
         st.info("Database kosong.")
     else:
-        del_id = st.selectbox("Pilih ID Bantuan yang akan Dihapus", df_global["id_bantuan"].tolist(), key="del_select")
+        display_col = "no_rangka" if "no_rangka" in df_global.columns and df_global["no_rangka"].notna().any() else df_global.columns[0]
+        del_val = st.selectbox("Pilih Data yang akan Dihapus", df_global[display_col].tolist(), key="del_select")
         if st.button("Hapus Data Terpilih", type="primary"):
             try:
-                supabase.table("hibah").delete().eq("id_bantuan", del_id).execute()
-                st.success(f"Data dengan ID {del_id} berhasil dihapus!")
+                supabase.table("hibah").delete().eq(display_col, del_val).execute()
+                st.success("Data berhasil dihapus!")
             except Exception as ex:
                 st.error(f"Gagal menghapus: {ex}")
