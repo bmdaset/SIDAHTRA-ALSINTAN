@@ -8,9 +8,21 @@ from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
+from supabase import create_client, Client
 
-# Konfigurasi Direktori Lokal
-DATA_FILE = "sidahtra_database.csv"
+# --- KREDENSIAL SUPABASE ---
+SUPABASE_URL = "https://kfbsbhsztfruhdqjydqs.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtmYnNiaHN6dGZydWhkcWp5ZHFzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk2NTM0NzIsImV4cCI6MjEwNTIyOTQ3Mn0.jEvSj_2gKTEmhRyR1IzjXCNPXOMIqafs_M4tq82QNUE"
+
+@st.cache_resource
+def init_supabase():
+    try:
+        return create_client(SUPABASE_URL, SUPABASE_KEY)
+    except Exception as e:
+        return None
+
+supabase: Client = init_supabase()
+
 UPLOAD_DIR = "sidahtra_files"
 os.makedirs(os.path.join(UPLOAD_DIR, "qrcode"), exist_ok=True)
 
@@ -31,26 +43,17 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- FUNGSI DATABASE LOKAL ---
-def load_data():
-    if os.path.exists(DATA_FILE):
-        try:
-            return pd.read_csv(DATA_FILE)
-        except Exception:
-            return pd.DataFrame(columns=get_columns())
-    else:
-        return pd.DataFrame(columns=get_columns())
-
-def get_columns():
-    return [
-        "id", "asal_usul", "tahun_hibah", "jenis_barang", "merk_type", 
-        "no_rangka", "no_mesin", "jumlah", "harga_satuan", "kelompok", 
-        "nama_ketua", "nik", "kecamatan", "desa", "alamat", 
-        "foto_gdrive", "proposal_gdrive", "bast_gdrive", "qr_path"
-    ]
-
-def save_data(df):
-    df.to_csv(DATA_FILE, index=False)
+def fetch_data_supabase():
+    if supabase is None:
+        return pd.DataFrame()
+    try:
+        response = supabase.table("hibah").select("*").execute()
+        df = pd.DataFrame(response.data)
+        if not df.empty and "id" in df.columns:
+            df = df.sort_values(by="id", ascending=True)
+        return df
+    except Exception as e:
+        return pd.DataFrame()
 
 def generate_qr_code(data_id, kelompok, jenis, kecamatan):
     qr_data = f"SIDAHTRA ASSET\nID: {data_id}\nKelompok: {kelompok}\nBarang: {jenis}\nKecamatan: {kecamatan}"
@@ -107,14 +110,14 @@ def generate_pdf_report(df_filtered):
 # --- HEADER APLIKASI ---
 st.markdown("""
     <div class='main-header'>
-        <h1 style='margin:0; font-size: 30px;'>🚜 🌱 SIDAHTRA (OFFLINE MODE)</h1>
+        <h1 style='margin:0; font-size: 30px;'>🚜 🌱 SIDAHTRA (SUPABASE CONNECTED)</h1>
         <p style='margin:5px 0 0 0; font-size: 15px;'>Sistem Data Hibah Alsintan Terpadu + Barcode & Manajemen Berkas</p>
     </div>
 """, unsafe_allow_html=True)
 
 menu = st.tabs(["📊 Dashboard & Filter", "📥 Input Data Baru", "📋 Rekap & Barcode", "🖨️ Laporan & Cetak", "📤 Impor/Ekspor & Hapus"])
 
-df_main = load_data()
+df_main = fetch_data_supabase()
 
 # ==================== TAB 0: DASHBOARD & FILTER ====================
 with menu[0]:
@@ -154,7 +157,7 @@ with menu[0]:
         st.markdown("---")
         st.dataframe(df_filtered, use_container_width=True)
     else:
-        st.info("Belum ada data tersimpan. Silakan input data baru melalui menu di atas.")
+        st.info("Belum ada data tersimpan di Supabase. Silakan input data baru melalui menu di atas.")
 
 # ==================== TAB 1: INPUT DATA BARU ====================
 with menu[1]:
@@ -185,38 +188,45 @@ with menu[1]:
         proposal_gdrive = st.text_input("Link Google Drive - Proposal")
         bast_gdrive = st.text_input("Link Google Drive - BAST (Berita Acara Serah Terima)")
         
-        submit_btn = st.form_submit_button("Simpan Data & Buat Barcode")
+        submit_btn = st.form_submit_button("Simpan Data ke Supabase & Buat Barcode")
         
         if submit_btn:
             if kelompok and jenis_barang:
-                new_id = int(df_main["id"].max() + 1) if not df_main.empty and "id" in df_main and pd.notna(df_main["id"].max()) else 1
-                qr_path = generate_qr_code(new_id, kelompok, jenis_barang, kecamatan)
-                
-                new_row = {
-                    "id": new_id,
-                    "asal_usul": asal_usul,
-                    "tahun_hibah": tahun_hibah,
-                    "jenis_barang": jenis_barang,
-                    "merk_type": merk_type,
-                    "no_rangka": no_rangka,
-                    "no_mesin": no_mesin,
-                    "jumlah": int(jumlah),
-                    "harga_satuan": float(harga_satuan),
-                    "kelompok": kelompok,
-                    "nama_ketua": nama_ketua,
-                    "nik": str(nik),
-                    "kecamatan": kecamatan,
-                    "desa": desa,
-                    "alamat": alamat,
-                    "foto_gdrive": foto_gdrive,
-                    "proposal_gdrive": proposal_gdrive,
-                    "bast_gdrive": bast_gdrive,
-                    "qr_path": qr_path
-                }
-                
-                df_main = pd.concat([df_main, pd.DataFrame([new_row])], ignore_index=True)
-                save_data(df_main)
-                st.success(f"✅ Data berhasil disimpan dengan ID #{new_id}! Barcode siap dicetak.")
+                if supabase:
+                    try:
+                        data_insert = {
+                            "asal_usul": asal_usul,
+                            "tahun_hibah": str(tahun_hibah),
+                            "jenis_barang": jenis_barang,
+                            "merk_type": merk_type,
+                            "no_rangka": no_rangka,
+                            "no_mesin": no_mesin,
+                            "jumlah": int(jumlah),
+                            "harga_satuan": float(harga_satuan),
+                            "kelompok": kelompok,
+                            "nama_ketua": nama_ketua,
+                            "nik": str(nik),
+                            "kecamatan": kecamatan,
+                            "desa": desa,
+                            "alamat": alamat,
+                            "foto_gdrive": foto_gdrive,
+                            "proposal_gdrive": proposal_gdrive,
+                            "bast_gdrive": bast_gdrive,
+                            "qr_path": ""
+                        }
+                        
+                        res = supabase.table("hibah").insert(data_insert).execute()
+                        if res.data:
+                            new_id = res.data[0]["id"]
+                            qr_path = generate_qr_code(new_id, kelompok, jenis_barang, kecamatan)
+                            supabase.table("hibah").update({"qr_path": qr_path}).eq("id", new_id).execute()
+                            st.success(f"✅ Data berhasil disimpan ke Supabase dengan ID #{new_id}!")
+                        else:
+                            st.error("Gagal menyimpan data ke database.")
+                    except Exception as err:
+                        st.error(f"Terjadi kesalahan: {err}")
+                else:
+                    st.error("Koneksi Supabase tidak aktif.")
             else:
                 st.warning("⚠️ Mohon isi minimal 'Nama Kelompok' dan 'Jenis Barang'!")
 
@@ -229,12 +239,15 @@ with menu[2]:
         
         c_b1, c_b2 = st.columns([1, 2])
         with c_b1:
-            if os.path.exists(str(row_sel["qr_path"])):
-                st.image(row_sel["qr_path"], caption=f"Barcode ID #{row_sel['id']}", width=220)
-                with open(row_sel["qr_path"], "rb") as file:
+            q_path = str(row_sel.get("qr_path", ""))
+            if q_path and os.path.exists(q_path):
+                st.image(q_path, caption=f"Barcode ID #{row_sel['id']}", width=220)
+                with open(q_path, "rb") as file:
                     st.download_button("📥 Download Barcode", file, file_name=f"barcode_id_{row_sel['id']}.png", mime="image/png")
             else:
-                st.warning("Barcode belum tersedia.")
+                # Buat ulang qr jika belum ada di direktori lokal
+                gen_path = generate_qr_code(row_sel['id'], row_sel['kelompok'], row_sel['jenis_barang'], row_sel['kecamatan'])
+                st.image(gen_path, caption=f"Barcode ID #{row_sel['id']}", width=220)
         with c_b2:
             st.markdown(f"**ID Aset:** #{row_sel['id']}")
             st.markdown(f"**Asal Usul:** {row_sel['asal_usul']} ({row_sel['tahun_hibah']})")
@@ -245,7 +258,7 @@ with menu[2]:
             st.markdown(f"**Link Proposal GDrive:** [Buka Tautan]({row_sel['proposal_gdrive']})" if row_sel['proposal_gdrive'] else "**Link Proposal:** -")
             st.markdown(f"**Link BAST GDrive:** [Buka Tautan]({row_sel['bast_gdrive']})" if row_sel['bast_gdrive'] else "**Link BAST:** -")
     else:
-        st.info("Belum ada data.")
+        st.info("Belum ada data di database.")
 
 # ==================== TAB 3: LAPORAN & CETAK ====================
 with menu[3]:
@@ -280,42 +293,54 @@ with menu[4]:
             template_df.to_excel(writer, index=False, sheet_name='Template')
         st.download_button("⬇️ Download Template Excel", t_excel.getvalue(), "template_sidahtra.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         
-        st.markdown("### 📤 Impor Data dari Excel")
+        st.markdown("### 📤 Impor Data Massal dari Excel")
         uploaded_file = st.file_uploader("Upload file Excel (.xlsx)", type=["xlsx"])
-        if uploaded_file is not None:
+        if uploaded_file is not None and supabase:
             try:
                 df_imp = pd.read_excel(uploaded_file)
-                for col in get_columns():
-                    if col not in df_imp.columns and col != "id" and col != "qr_path":
-                        df_imp[col] = ""
-                
-                start_id = int(df_main["id"].max() + 1) if not df_main.empty and "id" in df_main and pd.notna(df_main["id"].max()) else 1
-                new_qr_paths = []
-                new_ids = []
-                for idx, row in df_imp.iterrows():
-                    cur_id = start_id + idx
-                    new_ids.append(cur_id)
-                    qr_p = generate_qr_code(cur_id, row.get("kelompok", "Poktan"), row.get("jenis_barang", "Alsintan"), row.get("kecamatan", "-"))
-                    new_qr_paths.append(qr_p)
-                
-                df_imp["id"] = new_ids
-                df_imp["qr_path"] = new_qr_paths
-                
-                df_main = pd.concat([df_main, df_imp], ignore_index=True)
-                save_data(df_main)
-                st.success("✅ Data berhasil diimpor!")
+                success_count = 0
+                for _, row in df_imp.iterrows():
+                    data_row = {
+                        "asal_usul": str(row.get("asal_usul", "APBD Kabupaten")),
+                        "tahun_hibah": str(row.get("tahun_hibah", "2026")),
+                        "jenis_barang": str(row.get("jenis_barang", "Alsintan")),
+                        "merk_type": str(row.get("merk_type", "")),
+                        "no_rangka": str(row.get("no_rangka", "")),
+                        "no_mesin": str(row.get("no_mesin", "")),
+                        "jumlah": int(row.get("jumlah", 1)),
+                        "harga_satuan": float(row.get("harga_satuan", 0)),
+                        "kelompok": str(row.get("kelompok", "Kelompok")),
+                        "nama_ketua": str(row.get("nama_ketua", "")),
+                        "nik": str(row.get("nik", "")),
+                        "kecamatan": str(row.get("kecamatan", "")),
+                        "desa": str(row.get("desa", "")),
+                        "alamat": str(row.get("alamat", "")),
+                        "foto_gdrive": str(row.get("foto_gdrive", "")),
+                        "proposal_gdrive": str(row.get("proposal_gdrive", "")),
+                        "bast_gdrive": str(row.get("bast_gdrive", "")),
+                        "qr_path": ""
+                    }
+                    res = supabase.table("hibah").insert(data_row).execute()
+                    if res.data:
+                        new_id = res.data[0]["id"]
+                        q_p = generate_qr_code(new_id, data_row["kelompok"], data_row["jenis_barang"], data_row["kecamatan"])
+                        supabase.table("hibah").update({"qr_path": q_p}).eq("id", new_id).execute()
+                        success_count += 1
+                st.success(f"✅ Berhasil mengimpor {success_count} data ke Supabase!")
                 st.rerun()
             except Exception as e:
-                st.error(f"Gagal mengimpor file: {e}")
+                st.error(f"Gagal mengimpor: {e}")
 
     with col_ie2:
-        st.markdown("### 🗑️ Hapus Data")
+        st.markdown("### 🗑️ Hapus Data dari Database")
         if not df_main.empty:
             id_hapus = st.selectbox("Pilih ID Data yang Dihapus:", df_main["id"].tolist(), key="del_select")
             if st.button("Hapus Data Terpilih"):
-                df_main = df_main[df_main["id"] != id_hapus]
-                save_data(df_main)
-                st.success(f"Data ID #{id_hapus} berhasil dihapus!")
-                st.rerun()
+                try:
+                    supabase.table("hibah").delete().eq("id", id_hapus).execute()
+                    st.success(f"Data ID #{id_hapus} berhasil dihapus dari Supabase!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Gagal menghapus: {e}")
         else:
             st.info("Tidak ada data untuk dihapus.")
