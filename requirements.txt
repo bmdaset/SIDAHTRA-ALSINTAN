@@ -1,7 +1,6 @@
 streamlit
 pandas
+qrcode
 openpyxl
-python-docx
 reportlab
 supabase
-qrcode
