@@ -26,7 +26,7 @@ if SUPABASE_URL and SUPABASE_KEY:
     except Exception as e:
         st.error(f"Gagal terhubung ke Supabase: {e}")
 
-# Fungsi untuk mengambil data dari Supabase
+# Fungsi untuk mengambil data dari Supabase (dengan dukungan Clear Cache / Refresh)
 def fetch_data_supabase():
     if supabase is None:
         return pd.DataFrame()
@@ -49,6 +49,13 @@ st.markdown("""
         <p style='font-size: 1.1rem; margin: 0;'>Sistem Data Hibah Alsintan Terpadu + Barcode & Manajemen Berkas</p>
     </div>
 """, unsafe_allow_html=True)
+
+# Tombol Global Refresh Data di Sidebar / Bagian Atas
+col_rf1, col_rf2 = st.columns([6, 1])
+with col_rf2:
+    if st.button("🔄 Refresh Data"):
+        st.cache_data.clear()
+        st.rerun()
 
 # Navigasi Tab
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
@@ -174,91 +181,186 @@ with tab2:
 
 # ================= TAB 3: REKAP & BARCODE =================
 with tab3:
-    st.subheader("Cetak & Lihat Barcode / QR Code Unit")
+    st.subheader("Pencarian, Preview Barang & Cetak Barcode/QR Code")
     df_data = fetch_data_supabase()
     
     if df_data.empty:
-        st.info("Belum ada data untuk dibuatkan Barcode.")
+        st.info("Belum ada data untuk ditampilkan.")
     else:
-        selected_id = st.selectbox("Pilih ID / Data Barang", df_data['id'].tolist())
-        selected_row = df_data[df_data['id'] == selected_id].iloc[0]
+        # Fitur Search Barang
+        keyword = st.text_input("🔍 Cari Barang (Ketik Jenis Barang, Kelompok, atau No. Rangka)", "")
         
-        col_b1, col_b2 = st.columns([1, 1])
-        with col_b1:
-            st.markdown("### Detail Informasi")
-            st.write(f"**ID Data:** #{selected_row.get('id')}")
-            st.write(f"**Jenis Barang:** {selected_row.get('jenis_barang')}")
-            st.write(f"**Merk/Type:** {selected_row.get('merk_type')}")
-            st.write(f"**Kelompok:** {selected_row.get('kelompok')}")
-            st.write(f"**Ketua:** {selected_row.get('nama_ketua')}")
-            st.write(f"**Kecamatan:** {selected_row.get('kecamatan')}")
-            st.write(f"**Tahun:** {selected_row.get('tahun_hibah')}")
+        search_df = df_data.copy()
+        if keyword:
+            mask = search_df.astype(str).apply(lambda x: x.str.contains(keyword, case=False)).any(axis=1)
+            search_df = search_df[mask]
             
-        with col_b2:
-            st.markdown("### QR Code Aset")
-            qr_content = f"ID: {selected_row.get('id')}\nAlsintan: {selected_row.get('jenis_barang')}\nKelompok: {selected_row.get('kelompok')}\nNo. Rangka: {selected_row.get('no_rangka')}"
-            
-            qr = qrcode.QRCode(box_size=8, border=2)
-            qr.add_data(qr_content)
-            qr.make(fit=True)
-            img = qr.make_image(fill_color="black", back_color="white")
-            
-            buf = BytesIO()
-            img.save(buf, format="PNG")
-            byte_im = buf.getvalue()
-            
-            st.image(byte_im, caption=f"QR Code - {selected_row.get('jenis_barang')}", width=220)
-            st.download_button(
-                label="Unduh Gambar QR Code",
-                data=byte_im,
-                file_name=f"QR_Alsintan_ID_{selected_row.get('id')}.png",
-                mime="image/png"
+        st.markdown(f"Ditemukan **{len(search_df)}** data yang sesuai.")
+        
+        if not search_df.empty:
+            # Pilihan berdasarkan hasil pencarian
+            selected_id = st.selectbox(
+                "Pilih ID & Detail Barang untuk Preview", 
+                search_df['id'].tolist(),
+                format_func=lambda x: f"ID #{x} - {search_df[search_df['id'] == x]['jenis_barang'].values[0]} ({search_df[search_df['id'] == x]['kelompok'].values[0]})"
             )
+            
+            selected_row = search_df[search_df['id'] == selected_id].iloc[0]
+            
+            st.divider()
+            st.markdown("### 👁️ Preview Detail Barang & QR Code")
+            col_b1, col_b2 = st.columns([1, 1])
+            
+            with col_b1:
+                st.write(f"**ID Data:** #{selected_row.get('id')}")
+                st.write(f"**Asal Usul:** {selected_row.get('asal_usul')}")
+                st.write(f"**Tahun Hibah:** {selected_row.get('tahun_hibah')}")
+                st.write(f"**Jenis Barang:** {selected_row.get('jenis_barang')}")
+                st.write(f"**Merk/Type:** {selected_row.get('merk_type')}")
+                st.write(f"**Nomor Rangka:** {selected_row.get('no_rangka')}")
+                st.write(f"**Nomor Mesin:** {selected_row.get('no_mesin')}")
+                st.write(f"**Jumlah Unit:** {selected_row.get('jumlah')}")
+                st.write(f"**Kelompok Tani:** {selected_row.get('kelompok')}")
+                st.write(f"**Nama Ketua:** {selected_row.get('nama_ketua')}")
+                st.write(f"**Kecamatan/Desa:** {selected_row.get('kecamatan')} / {selected_row.get('desa')}")
+                
+            with col_b2:
+                qr_content = f"ID: {selected_row.get('id')}\nAlsintan: {selected_row.get('jenis_barang')}\nKelompok: {selected_row.get('kelompok')}\nNo. Rangka: {selected_row.get('no_rangka')}"
+                
+                qr = qrcode.QRCode(box_size=8, border=2)
+                qr.add_data(qr_content)
+                qr.make(fit=True)
+                img = qr.make_image(fill_color="black", back_color="white")
+                
+                buf = BytesIO()
+                img.save(buf, format="PNG")
+                byte_im = buf.getvalue()
+                
+                st.image(byte_im, caption=f"QR Code - {selected_row.get('jenis_barang')}", width=220)
+                st.download_button(
+                    label="Unduh Gambar QR Code",
+                    data=byte_im,
+                    file_name=f"QR_Alsintan_ID_{selected_row.get('id')}.png",
+                    mime="image/png"
+                )
 
 # ================= TAB 4: LAPORAN & CETAK =================
 with tab4:
-    st.subheader("Cetak Laporan PDF / Rekapitulasi")
+    st.subheader("Cetak Laporan PDF / Rekapitulasi & Unduh Excel")
     df_data = fetch_data_supabase()
     
     if df_data.empty:
         st.info("Tidak ada data untuk dicetak.")
     else:
-        st.write("Klik tombol di bawah untuk mengunduh laporan rekapitulasi data hibah dalam bentuk berkas PDF.")
+        st.write("Pilih format dokumen laporan rekapitulasi data hibah yang ingin diunduh:")
         
-        if st.button("Generate Laporan PDF"):
-            buffer = BytesIO()
-            p = canvas.Canvas(buffer, pagesize=letter)
-            width, height = letter
-            
-            p.drawString(50, height - 50, "LAPORAN REKAPITULASI HIBAH ALSINTAN")
-            p.drawString(50, height - 70, f"Dicetak pada: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            
-            y = height - 110
-            for idx, row in df_data.iterrows():
-                if y < 50:
-                    p.showPage()
-                    y = height - 50
-                text_line = f"ID: {row.get('id')} | {row.get('jenis_barang')} | Kelompok: {row.get('kelompok')} | Kec: {row.get('kecamatan')}"
-                p.drawString(50, y, text_line)
-                y -= 20
-                
-            p.save()
-            buffer.seek(0)
+        col_dl1, col_dl2 = st.columns(2)
+        
+        with col_dl1:
+            # Tombol Download Excel dari Data Rekap
+            excel_buffer = BytesIO()
+            with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                df_data.to_excel(writer, index=False, sheet_name="Rekap_Hibah")
+            excel_buffer.seek(0)
             
             st.download_button(
-                label="Unduh Berkas PDF",
-                data=buffer,
-                file_name="Laporan_Hibah_Alsintan.pdf",
-                mime="application/pdf"
+                label="📥 Unduh Rekap (Excel)",
+                data=excel_buffer,
+                file_name="Rekap_Laporan_Hibah_Alsintan.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
+            
+        with col_dl2:
+            if st.button("📄 Generate & Unduh Laporan PDF"):
+                buffer = BytesIO()
+                p = canvas.Canvas(buffer, pagesize=letter)
+                width, height = letter
+                
+                p.drawString(50, height - 50, "LAPORAN REKAPITULASI HIBAH ALSINTAN")
+                p.drawString(50, height - 70, f"Dicetak pada: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                
+                y = height - 110
+                for idx, row in df_data.iterrows():
+                    if y < 50:
+                        p.showPage()
+                        y = height - 50
+                    text_line = f"ID: {row.get('id')} | {row.get('jenis_barang')} | Kelompok: {row.get('kelompok')} | Kec: {row.get('kecamatan')}"
+                    p.drawString(50, y, text_line)
+                    y -= 20
+                    
+                p.save()
+                buffer.seek(0)
+                
+                st.download_button(
+                    label="Unduh Berkas PDF",
+                    data=buffer,
+                    file_name="Laporan_Hibah_Alsintan.pdf",
+                    mime="application/pdf"
+                )
 
 # ================= TAB 5: IMPOR/EKSPOR & HAPUS =================
 with tab5:
-    st.subheader("Manajemen Data (Ekspor, Impor & Hapus)")
-    df_data = fetch_data_supabase()
+    st.subheader("Manajemen Data (Ekspor, Impor Template & Hapus)")
     
+    st.markdown("### 📥 Unduh Template & Impor Data Excel")
+    
+    # Membuat Template Excel Kosong Berdasarkan Kolom Database
+    template_columns = [
+        "asal_usul", "tahun_hibah", "jenis_barang", "merk_type", "no_rangka", 
+        "no_mesin", "jumlah", "harga_satuan", "kelompok", "nama_ketua", 
+        "nik", "kecamatan", "desa", "alamat", "foto_gdrive", "proposal_gdrive", "bast_gdrive"
+    ]
+    df_template = pd.DataFrame(columns=template_columns)
+    
+    tmpl_buffer = BytesIO()
+    with pd.ExcelWriter(tmpl_buffer, engine='openpyxl') as writer:
+        df_template.to_excel(writer, index=False, sheet_name="Template_Input")
+    tmpl_buffer.seek(0)
+    
+    st.download_button(
+        label="⬇️ Unduh Template Excel",
+        data=tmpl_buffer,
+        file_name="template_input_hibah.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    
+    st.markdown("---")
+    
+    # Upload File Excel/CSV untuk Impor
+    uploaded_file = st.file_uploader("Unggah Berkas Excel/CSV yang Telah Diisi", type=["xlsx", "csv"])
+    if uploaded_file is not None:
+        try:
+            if uploaded_file.name.endswith('.csv'):
+                df_import = pd.read_csv(uploaded_file)
+            else:
+                df_import = pd.read_excel(uploaded_file)
+                
+            st.write("Preview Data yang Akan Diimpor:")
+            st.dataframe(df_import.head())
+            
+            if st.button("🚀 Proses Impor ke Supabase"):
+                if supabase is None:
+                    st.error("Koneksi Supabase belum terhubung.")
+                else:
+                    success_count = 0
+                    for _, row in df_import.iterrows():
+                        row_dict = row.dropna().to_dict()
+                        if "jenis_barang" in row_dict and "kelompok" in row_dict:
+                            row_dict["qr_path"] = ""
+                            try:
+                                supabase.table("hibah").insert(row_dict).execute()
+                                success_count += 1
+                            except Exception:
+                                pass
+                    st.success(f"Berhasil mengimpor {success_count} data ke Supabase!")
+        except Exception as e:
+            st.error(f"Terjadi kesalahan saat membaca file: {e}")
+
+    st.divider()
+    
+    df_data = fetch_data_supabase()
     if not df_data.empty:
-        st.markdown("### Ekspor Data ke CSV")
+        st.markdown("### 📤 Ekspor Seluruh Data")
         csv_data = df_data.to_csv(index=False).encode('utf-8')
         st.download_button(
             label="Unduh Seluruh Data (CSV)",
@@ -268,7 +370,7 @@ with tab5:
         )
     
     st.divider()
-    st.markdown("### Hapus Data Berdasarkan ID")
+    st.markdown("### 🗑️ Hapus Data Berdasarkan ID")
     del_id = st.number_input("Masukkan ID Data yang akan dihapus", min_value=1, step=1)
     if st.button("Hapus Data"):
         if supabase:
