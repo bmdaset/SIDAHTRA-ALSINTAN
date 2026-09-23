@@ -14,7 +14,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom CSS agar lebih rapi dan nyaman dilihat di HP (Mobile Responsive)
+# Custom CSS agar tabel preview bergaris rapi, elegan, & ramah mobile (HP)
 st.markdown("""
     <style>
     .main-header {
@@ -34,11 +34,37 @@ st.markdown("""
         font-size: 0.95rem;
         margin: 0;
     }
-    /* Optimisasi card/tampilan di mobile */
+    /* Style Tabel Detail Bergaris */
+    .detail-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+        margin-bottom: 15px;
+        font-size: 0.95rem;
+        background-color: #ffffff;
+        color: #333333;
+    }
+    .detail-table th, .detail-table td {
+        border: 1px solid #dcdcdc;
+        padding: 10px 12px;
+        text-align: left;
+    }
+    .detail-table th {
+        background-color: #f1f8e9;
+        color: #1b5e20;
+        width: 35%;
+        font-weight: bold;
+    }
+    .detail-table td {
+        width: 65%;
+    }
     @media (max-width: 768px) {
         .stButton button {
             width: 100%;
             margin-bottom: 10px;
+        }
+        .detail-table {
+            font-size: 0.85rem;
         }
     }
     </style>
@@ -86,7 +112,7 @@ with col_rf2:
         st.cache_data.clear()
         st.rerun()
 
-# Navigasi Tab (Diringkas menjadi 4 Tab agar lebih rapi di HP)
+# Navigasi Tab (Diringkas menjadi 4 Tab)
 tab1, tab2, tab3, tab4 = st.tabs([
     "📊 Dashboard", 
     "📥 Input Data", 
@@ -102,7 +128,6 @@ with tab1:
     if df_data.empty:
         st.info("Belum ada data tersimpan di Supabase.")
     else:
-        # Ringkasan Metrik (Responsif untuk HP)
         col1, col2 = st.columns(2)
         with col1:
             st.metric("Total Unit", int(df_data['jumlah'].sum()) if 'jumlah' in df_data.columns else len(df_data))
@@ -188,13 +213,13 @@ with tab2:
 
 # ================= TAB 3: REKAP, BARCODE & LAPORAN (DIGABUNG) =================
 with tab3:
-    st.subheader("📋 Rekap, Preview Barcode & Laporan Cetak")
+    st.subheader("📋 Rekap, Preview Detail & Barcode")
     df_data = fetch_data_supabase()
     
     if df_data.empty:
         st.info("Belum ada data untuk ditampilkan.")
     else:
-        # Bagian 1: Pencarian dan Instant Preview Barcode
+        # Fitur Pencarian Data
         keyword = st.text_input("🔍 Cari Data (Jenis Barang / Kelompok / No Rangka)", "")
         
         search_df = df_data.copy()
@@ -204,7 +229,7 @@ with tab3:
             
         if not search_df.empty:
             selected_id = st.selectbox(
-                "Pilih Item untuk Preview Detail & QR Code", 
+                "Pilih Item untuk Melihat Preview Detail Lengkap & QR Code", 
                 search_df['id'].tolist(),
                 format_func=lambda x: f"ID #{x} - {search_df[search_df['id'] == x]['jenis_barang'].values[0]} ({search_df[search_df['id'] == x]['kelompok'].values[0]})"
             )
@@ -213,17 +238,47 @@ with tab3:
             
             with st.container():
                 st.markdown("---")
-                st.markdown("#### 👁️ Instant Preview Detail & Barcode")
+                st.markdown("#### 👁️ Preview Detail Lengkap Barang & QR Code")
                 
-                # Tampil ringkas & enak dilihat di HP
-                st.write(f"**ID:** #{selected_row.get('id')} | **Tahun:** {selected_row.get('tahun_hibah')}")
-                st.write(f"**Barang:** {selected_row.get('jenis_barang')} ({selected_row.get('merk_type')})")
-                st.write(f"**Kelompok:** {selected_row.get('kelompok')} (Ketua: {selected_row.get('nama_ketua')})")
-                st.write(f"**Lokasi:** Kec. {selected_row.get('kecamatan')} / Desa {selected_row.get('desa')}")
-                st.write(f"**No. Rangka/Mesin:** {selected_row.get('no_rangka')} / {selected_row.get('no_mesin')}")
+                # Fungsi Helper untuk membaca nilai kolom dengan aman
+                def val(key):
+                    v = selected_row.get(key)
+                    return "-" if pd.isna(v) or str(v).strip() == "" else str(v)
+
+                # Format Harga Rupiah
+                try:
+                    harga_val = float(selected_row.get('harga_satuan', 0))
+                    harga_str = f"Rp {harga_val:,.2f}"
+                except:
+                    harga_str = str(selected_row.get('harga_satuan', '-'))
+
+                # Render Preview Sedetail-detainya dalam Tabel Bergaris HTML yang Rapi
+                html_detail = f"""
+                <table class="detail-table">
+                    <tr><th>ID Data</th><td>#{val('id')}</td></tr>
+                    <tr><th>Asal Usul Bantuan</th><td>{val('asal_usul')}</td></tr>
+                    <tr><th>Tahun Hibah</th><td>{val('tahun_hibah')}</td></tr>
+                    <tr><th>Jenis Barang / Alsintan</th><td>{val('jenis_barang')}</td></tr>
+                    <tr><th>Merk / Type</th><td>{val('merk_type')}</td></tr>
+                    <tr><th>Nomor Rangka</th><td>{val('no_rangka')}</td></tr>
+                    <tr><th>Nomor Mesin</th><td>{val('no_mesin')}</td></tr>
+                    <tr><th>Jumlah Unit</th><td>{val('jumlah')} Unit</td></tr>
+                    <tr><th>Harga Satuan</th><td>{harga_str}</td></tr>
+                    <tr><th>Nama Kelompok Tani / P3A</th><td>{val('kelompok')}</td></tr>
+                    <tr><th>Nama Ketua / Penanggung Jawab</th><td>{val('nama_ketua')}</td></tr>
+                    <tr><th>NIK Ketua</th><td>{val('nik')}</td></tr>
+                    <tr><th>Kecamatan</th><td>{val('kecamatan')}</td></tr>
+                    <tr><th>Desa / Kelurahan</th><td>{val('desa')}</td></tr>
+                    <tr><th>Alamat Lengkap</th><td>{val('alamat')}</td></tr>
+                    <tr><th>Link Foto Penyerahan (GDrive)</th><td>{val('foto_gdrive')}</td></tr>
+                    <tr><th>Link Proposal (GDrive)</th><td>{val('proposal_gdrive')}</td></tr>
+                    <tr><th>Link BAST (GDrive)</th><td>{val('bast_gdrive')}</td></tr>
+                </table>
+                """
+                st.markdown(html_detail, unsafe_allow_html=True)
                 
-                # Generate QR Code langsung muncul
-                qr_content = f"ID: {selected_row.get('id')}\nAlsintan: {selected_row.get('jenis_barang')}\nKelompok: {selected_row.get('kelompok')}\nNo. Rangka: {selected_row.get('no_rangka')}"
+                # Generate & Tampilkan QR Code
+                qr_content = f"ID: {val('id')}\nAlsintan: {val('jenis_barang')}\nKelompok: {val('kelompok')}\nNo. Rangka: {val('no_rangka')}"
                 qr = qrcode.QRCode(box_size=6, border=2)
                 qr.add_data(qr_content)
                 qr.make(fit=True)
@@ -233,18 +288,21 @@ with tab3:
                 img.save(buf, format="PNG")
                 byte_im = buf.getvalue()
                 
-                st.image(byte_im, caption=f"QR Code ID #{selected_row.get('id')}", width=180)
-                st.download_button(
-                    label="📥 Unduh Gambar QR Code",
-                    data=byte_im,
-                    file_name=f"QR_Alsintan_ID_{selected_row.get('id')}.png",
-                    mime="image/png"
-                )
+                col_img1, col_img2 = st.columns([1, 2])
+                with col_img1:
+                    st.image(byte_im, caption=f"QR Code ID #{val('id')}", width=160)
+                with col_img2:
+                    st.download_button(
+                        label="📥 Unduh Gambar QR Code",
+                        data=byte_im,
+                        file_name=f"QR_Alsintan_ID_{val('id')}.png",
+                        mime="image/png"
+                    )
         
         st.divider()
         
-        # Bagian 2: Tombol Cetak Laporan (Excel & PDF)
-        st.markdown("#### 🖨️ Cetak & Unduh Berkas Laporan Keseluruhan")
+        # Bagian Laporan Keseluruhan (Excel & PDF)
+        st.markdown("#### 🖨️ Cetak & Unduh Laporan Keseluruhan")
         col_dl1, col_dl2 = st.columns(2)
         
         with col_dl1:
